@@ -10,7 +10,7 @@ This project analyzes the static public transportation data of Delhi using the G
 - **Files used:** `routes.txt`, `trips.txt`, `stop_times.txt`, `stops.txt`, `calendar.txt`
 - **Source:** [Delhi Open Transit Data](https://otd.delhi.gov.in/data/static/) 
 ---
-
+ 
 ## 🎯 Project Objectives
 
 1. **Exploratory Data Analysis (EDA)**  
