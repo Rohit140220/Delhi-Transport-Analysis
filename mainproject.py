@@ -1,0 +1,321 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+routes = pd.read_csv(r"D:\SEM4\Python Data Science\Delhi-Transport-Analysis\Data\Raw\routes.txt")
+trips = pd.read_csv(r"D:\SEM4\Python Data Science\Delhi-Transport-Analysis\Data\Raw\trips.txt")
+stop_times = pd.read_csv(r"D:\SEM4\Python Data Science\Delhi-Transport-Analysis\Data\Raw\stop_times.txt")
+stops = pd.read_csv(r"D:\SEM4\Python Data Science\Delhi-Transport-Analysis\Data\Raw\stops.txt")
+calendar = pd.read_csv(r"D:\SEM4\Python Data Science\Delhi-Transport-Analysis\Data\Raw\calendar.txt")
+
+
+
+# === Objective 1: Data Cleaning & Management ===
+
+# Drop rows with missing arrival or departure time
+stop_times.dropna(subset=['arrival_time', 'departure_time'], inplace=True)
+
+# Keep only rows where time is in HH:MM:SS or HH:MM format
+stop_times = stop_times[
+    stop_times['arrival_time'].str.contains(':') &
+    stop_times['departure_time'].str.contains(':')
+]
+
+# Convert time strings to minutes from midnight (basic transformation)
+def time_to_minutes(t):
+    try:
+        parts = t.split(':')
+        return int(parts[0]) * 60 + int(parts[1])
+    except:
+        return np.nan
+
+stop_times['arrival_minutes'] = stop_times['arrival_time'].apply(time_to_minutes)
+stop_times['departure_minutes'] = stop_times['departure_time'].apply(time_to_minutes)
+
+# Optional: Drop rows where conversion failed
+stop_times.dropna(subset=['arrival_minutes', 'departure_minutes'], inplace=True)
+
+print("Data cleaned successfully! Shape after cleaning:", stop_times.shape)
+
+
+# Remove any rows with missing critical fields like route_id or route_short_name
+routes.dropna(subset=['route_id', 'route_short_name'], inplace=True)
+
+# Ensure route_id is string
+routes['route_id'] = routes['route_id'].astype(str)
+
+print("Cleaned 'routes' — shape:", routes.shape)
+
+
+# Drop rows with missing trip_id or route_id
+trips.dropna(subset=['trip_id', 'route_id'], inplace=True)
+
+# Convert IDs to string for consistency
+trips['trip_id'] = trips['trip_id'].astype(str)
+trips['route_id'] = trips['route_id'].astype(str)
+
+print("Cleaned 'trips' — shape:", trips.shape)
+
+
+# Drop rows with missing service_id or all-zero days
+calendar.dropna(subset=['service_id'], inplace=True)
+
+# Drop services that are not active on any day
+calendar = calendar[calendar[['monday','tuesday','wednesday','thursday','friday','saturday','sunday']].sum(axis=1) > 0]
+
+# Ensure service_id is string
+calendar['service_id'] = calendar['service_id'].astype(str)
+
+print("Cleaned 'calendar' — shape:", calendar.shape)
+
+
+# Drop rows with missing stop_id, stop_name or coordinates
+stops.dropna(subset=['stop_id', 'stop_name', 'stop_lat', 'stop_lon'], inplace=True)
+
+# Convert stop_id to string
+stops['stop_id'] = stops['stop_id'].astype(str)
+
+# Ensure coordinates are float
+stops['stop_lat'] = stops['stop_lat'].astype(float)
+stops['stop_lon'] = stops['stop_lon'].astype(float)
+
+print("Cleaned 'stops' — shape:", stops.shape)
+
+
+
+
+
+
+# === Objective 2: Exploratory Data Analysis (EDA) ===
+
+# Ensure Seaborn styling is used
+sns.set(style='whitegrid')
+
+
+
+
+# --- 1. Distribution of Stop Locations (Latitude & Longitude) ---
+plt.figure(figsize=(8, 6))
+sns.scatterplot(data=stops, x='stop_lon', y='stop_lat', s=10, alpha=0.5)
+plt.title('Bus Stops in Delhi (Longitude vs Latitude)')
+plt.xlabel('Longitude')
+plt.ylabel('Latitude')
+plt.tight_layout()
+plt.savefig('figures/eda_stop_locations.png')
+plt.close()
+
+
+# --- 2. Histogram of Arrival Times ---
+plt.figure(figsize=(10, 4))
+sns.histplot(stop_times['arrival_minutes'].dropna(), bins=48, kde=True, color='teal')
+plt.title('Distribution of Bus Arrival Times')
+plt.xlabel('Minutes from Midnight')
+plt.ylabel('Frequency')
+plt.tight_layout()
+plt.savefig('figures/eda_arrival_hist.png')
+plt.close()
+
+
+
+# --- 3. Average Stop Sequence Length per Trip ---
+sequence_stats = stop_times.groupby('trip_id')['stop_sequence'].count()
+
+plt.figure(figsize=(8, 4))
+sns.histplot(sequence_stats, bins=30, kde=True, color='darkorange')
+plt.title('Number of Stops per Trip')
+plt.xlabel('Stop Count')
+plt.ylabel('Number of Trips')
+plt.tight_layout()
+plt.savefig('figures/eda_stop_counts.png')
+plt.close()
+
+
+print("EDA completed! Visualizations saved in the 'figures' folder.")
+
+
+
+# === Objective 3: Summary Statistics ===
+
+# 1. Summary of 'routes'
+print("\n🔹 ROUTES Summary Statistics:")
+print(routes.describe(include='all'))
+
+# 2. Summary of 'trips'
+print("\n🔹 TRIPS Summary Statistics:")
+print(trips.describe(include='all'))
+
+# Total number of unique trips
+unique_trips = trips['trip_id'].nunique()
+print(f"\nTotal Unique Trips: {unique_trips}")
+
+# 3. Summary of 'calendar' – Count services active on each day
+print("\n🔹 CALENDAR Service Availability by Day:")
+for day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']:
+    count = calendar[calendar[day] == 1].shape[0]
+    print(f"{day.capitalize()}: {count} services")
+
+# 4. Summary of 'stops'
+print("\n🔹 STOPS Summary Statistics:")
+print(stops[['stop_lat', 'stop_lon']].describe())
+
+# Count unique stops
+print(f"\nTotal Unique Stops: {stops['stop_id'].nunique()}")
+
+# Check for missing values in each dataset
+print("\n🔹 Missing Values Check:")
+print("Routes:\n", routes.isnull().sum())
+print("Trips:\n", trips.isnull().sum())
+print("Calendar:\n", calendar.isnull().sum())
+print("Stops:\n", stops.isnull().sum())
+
+
+# === Objective 4: Correlation & Covariance ===
+
+# Drop rows with all NaNs in calendar day columns
+calendar_days = calendar[['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']].dropna(how='all')
+
+# Drop rows with NaN in latitude or longitude
+stops_coords = stops[['stop_lat', 'stop_lon']].dropna()
+
+# Create 'figures' folder if not present (OPTIONAL in your case since no os module is used)
+# You can manually create it in your folder if needed
+
+# ==== CALENDAR CORRELATION ====
+if calendar_days.shape[0] >= 2:
+    calendar_corr = calendar_days.corr()
+
+    if not calendar_corr.isna().all().all():
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(calendar_corr, annot=True, cmap='coolwarm', fmt='.2f')
+        plt.title('Correlation between Service Days (Calendar)')
+        plt.tight_layout()
+        plt.savefig('figures/correlation_calendar.png')
+        plt.close()
+    else:
+        print("All values in calendar correlation are NaN.")
+else:
+    print("Not enough valid rows in calendar data for correlation.")
+
+# ==== CALENDAR COVARIANCE ====
+if calendar_days.shape[0] >= 2:
+    calendar_cov = calendar_days.cov()
+
+    if not calendar_cov.isna().all().all():
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(calendar_cov, annot=True, cmap='YlGnBu', fmt='.2f')
+        plt.title('Covariance between Service Days (Calendar)')
+        plt.tight_layout()
+        plt.savefig('figures/covariance_calendar.png')
+        plt.close()
+    else:
+        print("All values in calendar covariance are NaN.")
+else:
+    print("Not enough valid rows in calendar data for covariance.")
+
+# ==== STOPS LAT/LON CORRELATION ====
+if stops_coords.shape[0] >= 2:
+    stops_corr = stops_coords.corr()
+
+    if not stops_corr.isna().all().all():
+        plt.figure(figsize=(5, 4))
+        sns.heatmap(stops_corr, annot=True, cmap='magma', fmt='.2f')
+        plt.title('Correlation between Stop Latitude and Longitude')
+        plt.tight_layout()
+        plt.savefig('figures/correlation_stop_coords.png')
+        plt.close()
+    else:
+        print("All values in stop coordinates correlation are NaN.")
+else:
+    print("Not enough valid stop coordinates for correlation.")
+
+
+# === Objective 5: Outlier Detection (Duration Outliers) ===
+
+# === Step 1: Compute Trip Durations ===
+
+# Merge stop_times with trips to calculate duration (end time - start time)
+stop_times['arrival_time'] = pd.to_timedelta(stop_times['arrival_time'], errors='coerce')
+stop_times['departure_time'] = pd.to_timedelta(stop_times['departure_time'], errors='coerce')
+
+trip_durations = stop_times.groupby('trip_id').agg(
+    start_time=('departure_time', 'min'),
+    end_time=('arrival_time', 'max')
+).dropna()
+
+trip_durations['duration_min'] = (trip_durations['end_time'] - trip_durations['start_time']).dt.total_seconds() / 60
+
+# Filter out unrealistic durations (optional)
+trip_durations = trip_durations[(trip_durations['duration_min'] > 0) & (trip_durations['duration_min'] < 500)]
+
+# === Step 2: Detect Outliers using IQR ===
+
+Q1 = trip_durations['duration_min'].quantile(0.25)
+Q3 = trip_durations['duration_min'].quantile(0.75)
+IQR = Q3 - Q1
+
+lower_bound = Q1 - 1.5 * IQR
+upper_bound = Q3 + 1.5 * IQR
+
+outliers = trip_durations[(trip_durations['duration_min'] < lower_bound) | (trip_durations['duration_min'] > upper_bound)]
+non_outliers = trip_durations[(trip_durations['duration_min'] >= lower_bound) & (trip_durations['duration_min'] <= upper_bound)]
+
+print(f"Total Trips Analyzed: {len(trip_durations)}")
+print(f"Outliers Detected: {len(outliers)}")
+
+# === Step 3: Visualize Outliers ===
+
+# Boxplot
+plt.figure(figsize=(8, 4))
+sns.boxplot(x=trip_durations['duration_min'], color='skyblue')
+plt.title('Boxplot of Trip Durations (in Minutes)')
+plt.xlabel('Duration (minutes)')
+plt.tight_layout()
+plt.savefig('figures/trip_duration_boxplot.png')
+plt.close()
+
+# Histogram with outliers highlighted
+plt.figure(figsize=(10, 6))
+sns.histplot(non_outliers['duration_min'], bins=50, color='green', label='Normal Trips', kde=True)
+sns.histplot(outliers['duration_min'], bins=50, color='red', label='Outliers', kde=True)
+plt.title('Distribution of Trip Durations')
+plt.xlabel('Duration (minutes)')
+plt.ylabel('Number of Trips')
+plt.legend()
+plt.tight_layout()
+plt.savefig('figures/trip_duration_outliers.png')
+plt.close()
+
+
+# === Objective 6: Route Popularity ===
+
+
+sns.set(style='whitegrid')
+
+# === Step 1: Count trips per route_id ===
+route_trip_counts = trips['route_id'].value_counts().reset_index()
+route_trip_counts.columns = ['route_id', 'num_trips']
+
+# === Step 2: Select top 20 routes ===
+top_routes = route_trip_counts.sort_values(by='num_trips', ascending=False).head(20)
+
+# === Step 3: Plot using route_id instead of route_short_name ===
+plt.figure(figsize=(12, 6))
+sns.barplot(data=top_routes, x='route_id', y='num_trips', color='skyblue')
+plt.title('Top 20 Most Popular Route IDs by Number of Trips')
+plt.xlabel('Route ID')
+plt.ylabel('Number of Trips')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig('figures/top_routes_by_trips.png')
+plt.show()
+
+
+
+
+
+
+
+
+
+
